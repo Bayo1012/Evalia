@@ -45,3 +45,7 @@ Resultados y transcripciones se guardan en `evalia.ensayos.v1`. Audio/video nunc
 El flujo demo y el contrato HTTP se prueban automáticamente. La grabación real de Erick, el backend y las mediciones físicas de MediaPipe requieren sus implementaciones/dispositivos y una prueba integrada. El frontend no afirma que esas integraciones estén verificadas por recorrer la demo.
 
 Referencias de implementación: [Tailwind con Vite](https://tailwindcss.com/docs/installation/using-vite) y [movimiento accesible en Motion](https://motion.dev/docs/react-accessibility).
+
+## Archivos de contexto
+Inicio incluye selección múltiple y arrastrar/soltar PPT, PPTX, PDF, DOC y DOCX (5 archivos, 20 MB cada uno). Los File permanecen en memoria de App, separados del contexto JSON y del historial. No se envían al contrato actual: el backend debe acordar un endpoint de extracción o campos multipart para documentos antes de habilitar su uso como contexto. La demo identifica esta limitación explícitamente. Componente: src/components/ArchivosContexto.tsx.
+

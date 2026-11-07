@@ -15,7 +15,6 @@ import {
   Acompanante,
   Barra,
   Boton,
-  Cargando,
   Mensaje,
   Tarjeta,
   tiempo,
@@ -30,6 +29,7 @@ import {
 } from "../integrations/audio";
 import { useAnalisisVideo, dibujarLandmarks } from "../analysis/video";
 interface Props {
+  intentoInicial?: Intento | null;
   demo: boolean;
   contexto: Contexto;
   stream: MediaStream | null;
@@ -43,11 +43,12 @@ interface Props {
 }
 export default function Grabacion(p: Props) {
   const [estado, setEstado] = useState<"preparando" | "grabando" | "revision">(
-    "preparando",
+    p.intentoInicial ? "revision" : "preparando",
   );
-  const [segundos, setSegundos] = useState(0);
-  const [intento, setIntento] = useState<Intento | null>(null);
+  const [segundos, setSegundos] = useState(Math.floor(p.intentoInicial?.duracion ?? 0));
+  const [intento, setIntento] = useState<Intento | null>(p.intentoInicial ?? null);
   const [error, setError] = useState("");
+  const [ocupado, setOcupado] = useState(false);
   const [audio, setAudio] = useState<MetricasAudio>({
     volumen: null,
     ritmo: null,
@@ -65,16 +66,26 @@ export default function Grabacion(p: Props) {
     vivo.current = true;
     return () => {
       vivo.current = false;
-      sesion.current?.cancelar();
-      liberarStream(streamRef.current);
+      // StrictMode vuelve a montar los efectos: no apagar el stream prestado en ese ensayo.
+      queueMicrotask(() => {
+        if (vivo.current) return;
+        try { sesion.current?.cancelar(); } catch { /* continuar con la limpieza */ }
+        liberarStream(streamRef.current);
+      });
     };
   }, []);
   useEffect(() => {
-    if (p.demo) {
-      inicio.current = performance.now();
-      setEstado("grabando");
+    let cancelado = false;
+    if (p.demo && !p.intentoInicial) {
+      void analisis.iniciar().then(() => {
+        if (cancelado || !vivo.current) return;
+        inicio.current = performance.now();
+        analisis.sincronizarInicio(inicio.current);
+        setEstado("grabando");
+      });
     }
-  }, [p.demo]);
+    return () => { cancelado = true; };
+  }, [p.demo, p.intentoInicial, analisis.iniciar, analisis.sincronizarInicio]);
   useEffect(() => {
     if (videoRef.current && p.stream) videoRef.current.srcObject = p.stream;
     streamRef.current = p.stream;
@@ -114,13 +125,16 @@ export default function Grabacion(p: Props) {
   async function comenzarReal() {
     if (bloqueo.current) return;
     bloqueo.current = true;
+    setOcupado(true);
     setError("");
     try {
       const adaptador = obtenerAdaptadorAudio();
       if (!adaptador)
         throw new Error("El módulo de audio todavía no está conectado.");
       let stream = streamRef.current;
-      if (!stream?.getTracks().every((t) => t.readyState === "live")) {
+      if (!stream || !stream.getAudioTracks().some(t => t.readyState === "live")
+        || !stream.getVideoTracks().some(t => t.readyState === "live")) {
+        liberarStream(stream);
         stream = await navigator.mediaDevices.getUserMedia({
           audio: true,
           video: true,
@@ -134,7 +148,6 @@ export default function Grabacion(p: Props) {
       }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
       }
       await analisis.iniciar();
       if (!vivo.current) return;
@@ -147,9 +160,11 @@ export default function Grabacion(p: Props) {
       }
       sesion.current = nueva;
       inicio.current = performance.now();
+      analisis.sincronizarInicio(inicio.current);
       setSegundos(0);
       setEstado("grabando");
     } catch (e) {
+      if (!vivo.current) return;
       setError(
         e instanceof Error ? e.message : "No pudimos iniciar la grabación.",
       );
@@ -159,37 +174,49 @@ export default function Grabacion(p: Props) {
       p.onStream(null);
     } finally {
       bloqueo.current = false;
+      if (vivo.current) setOcupado(false);
     }
   }
   async function detener() {
     if (bloqueo.current) return;
     bloqueo.current = true;
+    setOcupado(true);
+    const duracion = Math.min(600, Math.max(0, (performance.now() - inicio.current) / 1000));
     try {
       const eventos = analisis.detener();
       const resultado = await sesion.current?.detener();
       sesion.current = null;
+      if (!vivo.current) return;
       setIntento({
         audio: resultado?.audio,
         video: resultado?.video,
-        eventos: [...eventos, ...(resultado?.eventos ?? [])],
-        duracion: segundos,
+        eventos: [...eventos, ...(resultado?.eventos ?? [])].sort((a, b) => a.t - b.t),
+        duracion,
       });
+      setSegundos(Math.floor(duracion));
       setEstado("revision");
-      liberarStream(streamRef.current);
-      streamRef.current = null;
-      p.onStream(null);
     } catch (e) {
+      if (!vivo.current) return;
+      try { sesion.current?.cancelar(); } catch { /* liberar los tracks igualmente */ }
+      setEstado("preparando");
       setError(
         e instanceof Error
           ? e.message
           : "No pudimos terminar la grabación. Vuelve a intentarlo.",
       );
     } finally {
+      sesion.current = null;
+      liberarStream(streamRef.current);
+      streamRef.current = null;
+      if (vivo.current) { p.onStream(null); setOcupado(false); }
       bloqueo.current = false;
     }
   }
-  function descartar() {
-    sesion.current?.cancelar();
+  async function descartar() {
+    if (bloqueo.current) return;
+    bloqueo.current = true;
+    setOcupado(true);
+    try { sesion.current?.cancelar(); } catch { /* continuar con el descarte */ }
     sesion.current = null;
     analisis.detener();
     setIntento(null);
@@ -197,12 +224,18 @@ export default function Grabacion(p: Props) {
     setError("");
     setAudio({ volumen: null, ritmo: null });
     p.onLimpiarError();
+    if (p.demo) await analisis.reiniciar();
+    if (!vivo.current) { bloqueo.current = false; return; }
     inicio.current = performance.now();
+    if (p.demo) analisis.sincronizarInicio(inicio.current);
     setEstado(p.demo ? "grabando" : "preparando");
+    setOcupado(false);
+    bloqueo.current = false;
   }
   const volumen = p.demo ? 64 : audio.volumen;
   const ritmo = p.demo ? 128 : audio.ritmo;
-  const mirada = p.demo ? 72 : analisis.metricas.contactoVisual;
+  const medicionVideo = estado === "grabando" && analisis.fiable;
+  const mirada = analisis.metricas.contactoVisual;
   return (
     <>
       <div className="page-heading">
@@ -271,7 +304,7 @@ export default function Grabacion(p: Props) {
                   <i />
                   {tiempo(segundos)}
                 </span>
-                <Boton variante="danger" onClick={() => void detener()}>
+                <Boton variante="danger" disabled={ocupado} onClick={() => void detener()}>
                   <Square size={15} fill="currentColor" /> Detener grabación
                 </Boton>
               </div>
@@ -286,15 +319,15 @@ export default function Grabacion(p: Props) {
             </span>
             <span>Límite: 10:00</span>
           </div>
-          {estado === "preparando" && (
-            <Boton onClick={() => void comenzarReal()}>
-              <Mic size={17} /> Iniciar grabación real
+          {estado === "preparando" && !p.demo && (
+            <Boton disabled={ocupado} onClick={() => void comenzarReal()}>
+              <Mic size={17} /> {ocupado ? "Preparando cámara y análisis…" : "Iniciar grabación real"}
             </Boton>
           )}
           {(error || (!p.demo && analisis.error)) && (
             <Mensaje error>{error || analisis.error}</Mensaje>
           )}
-          {!p.demo && analisis.aviso && estado === "grabando" && (
+          {!p.demo && !analisis.error && analisis.aviso && estado !== "revision" && (
             <Mensaje>{analisis.aviso}</Mensaje>
           )}
           {estado === "revision" && (
@@ -309,15 +342,13 @@ export default function Grabacion(p: Props) {
                 </p>
               </div>
               {p.error && <Mensaje error>{p.error}</Mensaje>}
-              {p.cargando ? (
-                <Cargando />
-              ) : (
+              {!p.cargando && (
                 <div className="actions">
                   <Boton onClick={() => intento && void p.onAnalizar(intento)}>
                     {p.error ? "Reintentar análisis" : "Analizar ensayo"}
                     <ArrowRight size={17} />
                   </Boton>
-                  <Boton variante="secondary" onClick={descartar}>
+                  <Boton variante="secondary" disabled={ocupado} onClick={() => void descartar()}>
                     <RotateCcw size={16} />
                     Descartar y volver a grabar
                   </Boton>
@@ -408,23 +439,19 @@ export default function Grabacion(p: Props) {
                 Orientación a la cámara
               </span>
               <strong>
-                {p.demo
-                  ? `${mirada}%`
-                  : analisis.aviso
-                    ? "Sin medición"
-                    : `${mirada}%`}
+                {medicionVideo ? `${mirada}%` : "Sin medición"}
               </strong>
             </div>
-            <Barra valor={mirada} />
+            {medicionVideo && <Barra valor={mirada} />}
             <p>Una mirada al frente conecta con tu audiencia.</p>
           </div>
           <div className="metric posture">
             <PersonStanding size={28} />
             <div>
               <strong>
-                {p.demo
+                {p.demo && medicionVideo
                   ? "Postura estable"
-                  : analisis.aviso
+                  : !medicionVideo
                     ? "Esperando medición"
                     : `Estabilidad: ${analisis.metricas.postura}%`}
               </strong>

@@ -1,7 +1,7 @@
 import type { Evento } from '../../types';
 import { vistaInicial, type VistaVideo } from './interfaces';
 
-export const vistaMock = (): VistaVideo => ({ ...vistaInicial(), aviso: 'MODO DEMO: métricas y eventos simulados.',
+export const vistaMock = (): VistaVideo => ({ ...vistaInicial(), fiable: true, aviso: 'MODO DEMO: métricas y eventos simulados.',
   metricas: { contactoVisual: 85, postura: 90 } });
 /** Sólo ejemplos que ya caben en la duración del ensayo simulado. */
 export function eventosMock(segundos: number): Evento[] {

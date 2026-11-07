@@ -18,5 +18,6 @@ export function useAnalisisVideo(videoRef: RefObject<HTMLVideoElement | null>,
   const iniciar = useCallback(async () => { await controlador.current?.iniciar(); }, []);
   const detener = useCallback(() => controlador.current?.detener() ?? [], []);
   const reiniciar = useCallback(async () => { await controlador.current?.reiniciar(); }, []);
-  return { ...vista, iniciar, detener, reiniciar };
+  const sincronizarInicio = useCallback((inicioMs: number) => { controlador.current?.sincronizarInicio(inicioMs); }, []);
+  return { ...vista, iniciar, detener, reiniciar, sincronizarInicio };
 }

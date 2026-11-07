@@ -3,14 +3,13 @@ import {
   AlertCircle,
   ArrowUpRight,
   Check,
-  Hexagon,
   LoaderCircle,
   Sparkles,
 } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import type { Paso } from "../types";
-import robotGrande from "../assets/eva01.jpg";
-import robotPequeno from "../assets/eva02.jpg";
+import robotGrande from "../assets/eva-perfil-transparente.png";
+import robotPequeno from "../assets/eva-cabeza-transparente.png";
 export function Boton({
   children,
   variante = "primary",
@@ -67,8 +66,7 @@ export function IdentidadEvalia() {
   return (
     <div className="brand">
       <span className="brand-symbol">
-        <Hexagon />
-        <span>e</span>
+        <img src={robotPequeno} alt="" />
       </span>
       <span>
         evalia<span className="brand-dot">.</span>
@@ -170,7 +168,6 @@ export function Acompanante({ children }: { children: ReactNode }) {
 export function Pie() {
   return (
     <footer className="footer">
-      <span>Practica. Ajusta. Brilla.</span>
       <span>
         Hecho para tu próxima gran idea <ArrowUpRight size={14} />
       </span>

@@ -100,7 +100,7 @@ export class ControladorVideo {
         if (resultado.falloCalibracion) {
           this.fallar('No se logró calibrar. Mejora la luz y mira a la cámara; puedes continuar sin análisis de video.'); return;
         }
-        this.publicar({ estado: 'listo', error: null, calibrando: resultado.calibrando, metricas: resultado.metricas,
+        this.publicar({ estado: 'listo', error: null, calibrando: resultado.calibrando, fiable: resultado.fiable, metricas: resultado.metricas,
           aviso: resultado.calibrando ? 'Mira a la cámara y mantén los hombros visibles durante 3 segundos.'
             : !resultado.fiable ? 'Señal poco fiable: no se penalizan los puntos que no se pueden medir.'
             : modelos.cpu ? 'Análisis activo en CPU.' : null,
@@ -131,5 +131,13 @@ export class ControladorVideo {
     return this.finales.map(e => ({ ...e }));
   }
   async reiniciar(): Promise<void> { this.detener(); await this.iniciar(); }
+  /** La grabación puede tardar en arrancar después de preparar los modelos. */
+  sincronizarInicio(inicioMs: number): void {
+    if (!this.activo || this.fallo || !Number.isFinite(inicioMs) || inicioMs < 0 || inicioMs > performance.now()) return;
+    this.inicio = inicioMs;
+    this.motor = new MotorVideo(); this.finales = [];
+    this.publicar(this.mock ? vistaMock() : { ...vistaInicial(), calibrando: true,
+      aviso: 'Mira a la cámara y mantén los hombros visibles durante 3 segundos.' });
+  }
   destruir(): void { this.liberar(); this.motor = new MotorVideo(); this.finales = []; }
 }

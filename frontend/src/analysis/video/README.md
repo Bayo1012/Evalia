@@ -5,22 +5,25 @@ contrato de `AGENTS.md`; no calcula puntajes del reporte ni llama al backend.
 La mirada es una estimación con iris, blendshapes y orientación, no seguimiento
 ocular clínico. Los umbrales son de partida para la demo, no valores validados.
 
-## Pendientes de integración (Diego / equipo)
+## Integración con el frontend
 
-El repositorio recibido tiene `package.json`, Vite y TypeScript vacíos y aún no
-incluye `src/types/`. Este módulo **no convierte ese esqueleto en una app ejecutable**.
-Sólo se han creado archivos en `src/analysis/video/`; no se cambió el contrato.
+El frontend ya incluye React/Vite, el tipo compartido `Evento`, MediaPipe 0.10.32
+y los recursos locales. `Grabacion.tsx` consume el hook, dibuja los landmarks y
+combina los eventos de video/audio al detener. No se cambió el contrato de datos.
 
-1. Diego configura React 19, Vite, TypeScript estricto y scripts `build` / `test`.
-2. El equipo publica `Evento` desde `frontend/src/types/index.ts`, con el contrato
-   acordado: `t`, `tipo`, `origen`, `detalle`. Aquí se importa desde `../../types`.
-   Si el nombre/exportación oficial difiere, ajustar sólo las importaciones de este
-   módulo. Los tipos de estado/señales internos no redefinen el evento compartido.
-3. Diego instala `@mediapipe/tasks-vision@0.10.32` (detectores y WASM), y Vitest para
-   ejecutar los tests. React y TypeScript son dependencias del frontend base.
-   La implementación fue verificada con TypeScript 5.9.3 y Vitest 3.2.4.
-4. Diego coloca los recursos de abajo en `frontend/public/`. No mezclar WASM de
-   otra versión del paquete. Descargar antes de la demo; no se usa CDN en ejecución.
+La página prepara el video, espera a que arranque el adaptador de audio y llama a
+`sincronizarInicio(performance.now())` para alinear cronómetro, calibración y eventos.
+El mock se inicia y reinicia también en modo demo, sin cámara ni modelos.
+`fiable` controla si se muestran métricas: un aviso informativo de CPU no las oculta.
+
+Pendiente de Erick: registrar su `AdaptadorAudio` mediante
+`registrarAdaptadorAudio` antes de montar App. Mientras no exista, Inicio mantiene
+deshabilitado el ensayo real. Los tests de integración usan un adaptador de prueba;
+no se agregó una implementación de audio de producción.
+
+Si faltan recursos en otro equipo, ejecutar `pnpm setup:video` desde `frontend/`.
+No mezclar WASM de otra versión del paquete. Descargar antes de la demo;
+no se usa CDN en ejecución.
 
 ## Recursos locales exactos
 
@@ -61,8 +64,9 @@ useEffect(() => {
   if (canvasRef.current) dibujarLandmarks(canvasRef.current, analisis.landmarks);
 }, [analisis.landmarks]);
 
-// En el manejador Comenzar: await analisis.iniciar(); luego inicia el cronómetro
-// y el audio del ensayo. La calibración ocupa los primeros 3 s del ensayo.
+// En Comenzar: await analisis.iniciar(); await adaptadorAudio.iniciar(...);
+// Después: const inicio = performance.now(); analisis.sincronizarInicio(inicio);
+// Cronómetro y calibración comparten ese origen de tiempo.
 // En Detener: const eventosVideo = analisis.detener(); combinar con los de audio.
 // Renderizar <video ref={videoRef} muted playsInline /> y el canvas superpuesto.
 ```
@@ -77,6 +81,8 @@ que la página coordine el recorte. Vaciar el overlay con los landmarks vacíos 
   que aún no se analiza. `listo` también permite mostrar la calibración en progreso.
 - `error`: mensaje o `null`; `aviso`: mensaje de calibración, CPU, demo o señal incierta.
 - `calibrando`: mostrar instrucción de mirar a cámara con hombros visibles.
+- `fiable`: muestra válida de rostro y postura. No inferir fiabilidad desde `aviso`;
+  CPU o modo demo pueden tener aviso y métricas válidas a la vez.
 - `metricas`: `contactoVisual` y `postura` (0–100), estimaciones instantáneas.
   Cero con aviso de calibración/señal incierta significa **sin medición**, no un
   puntaje para penalizar. Para el reporte se usan exclusivamente los eventos.
@@ -86,11 +92,14 @@ que la página coordine el recorte. Vaciar el overlay con los landmarks vacíos 
 - `detener(): Evento[]`: cierra episodios, cancela el bucle y libera recursos.
   Repetirla devuelve una copia del mismo resultado, no eventos nuevos.
 - `reiniciar(): Promise<void>`: detiene, borra datos anteriores y comienza otra sesión.
+- `sincronizarInicio(inicioMs): void`: al arrancar el audio, establece el origen común
+  usando `performance.now()` y borra la calibración/eventos anteriores al ensayo.
+  No reactiva un análisis que haya fallado. Llamarla una sola vez por grabación.
 
-`t` es el inicio del episodio, en segundos desde que termina la preparación de
-modelos/cámara y comienza el ensayo; incluye el período de calibración. Iniciar
-audio/cronómetro después de `await iniciar()` mantiene ese origen alineado. Si el
-análisis falla, su promesa resuelve y el audio puede empezar de todos modos.
+`t` es el inicio del episodio, en segundos desde el origen sincronizado del ensayo;
+incluye el período de calibración. Sin sincronización explícita usa el fin de la
+preparación del video. Si el análisis falla, su promesa resuelve y el audio puede
+empezar de todos modos.
 
 Mock: `{ mock: true }` o `VIDEO_CONFIG.mock = true`. No pide cámara ni carga modelos;
 marca las métricas como simuladas. Tras 8 s devuelve un evento de ejemplo desde el
@@ -149,8 +158,10 @@ Una vez integrado el frontend: `pnpm exec vitest run src/analysis/video` y `pnpm
 Tests incluidos: umbrales estrictos, histéresis, señal desconocida, calibración,
 un episodio sostenido de 10 minutos simulados, GPU→CPU, permisos/modelos tardíos,
 cancelación, repetición de ensayos, limpieza de tracks propios y stream prestado.
-El chequeo aislado usa un fixture del contrato fuera del repo; no sustituye el build
-del equipo. El frontend vacío no permite ejecutar todavía el flujo completo.
+Los tests y el build ahora se ejecutan en el frontend real, con su tipo compartido.
+Las pruebas de navegador de integración están en `tests/e2e/video.integration.spec.ts`;
+separan la conexión de la pantalla (dobles controlados) de la carga de modelos reales.
+No sustituyen la validación de precisión con una persona ni la implementación de audio.
 
 Probar manualmente antes de demo:
 

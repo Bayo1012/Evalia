@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import {
   AnimatePresence,
   motion,
@@ -6,6 +7,8 @@ import {
   useReducedMotion,
 } from "motion/react";
 import { Cabecera, Mensaje, Pie } from "./components/ui";
+import PantallaCarga from "./components/PantallaCarga";
+import { esperarCarga } from "./components/esperarCarga";
 import Inicio from "./pages/Inicio";
 import Grabacion from "./pages/Grabacion";
 import Reporte from "./pages/Reporte";
@@ -20,6 +23,7 @@ import {
 import { liberarStream, obtenerAdaptadorAudio } from "./integrations/audio";
 import type { Contexto, Ensayo, Intento, Paso, Repregunta } from "./types";
 export default function App() {
+  const [archivos, setArchivos] = useState<File[]>([]);
   const [paso, setPaso] = useState<Paso>("inicio");
   const [demo, setDemo] = useState(true);
   const [contexto, setContexto] = useState<Contexto>({ ...contextoDemo });
@@ -28,11 +32,14 @@ export default function App() {
   const [actual, setActual] = useState<Ensayo | null>(null);
   const [anterior, setAnterior] = useState<Ensayo>();
   const [video, setVideo] = useState<Blob>();
+  const [intentoAnterior, setIntentoAnterior] = useState<Intento | null>(null);
+  const [indiceJurado, setIndiceJurado] = useState(0);
+  const [juradoEnviando, setJuradoEnviando] = useState(false);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
   const [cargando, setCargando] = useState(false);
   const [fallar, setFallar] = useState(false);
-  const [confirmarSalida, setConfirmarSalida] = useState(false);
+  const [confirmarSalida, setConfirmarSalida] = useState<"inicio" | "reporte" | null>(null);
   const bloqueo = useRef(false);
   const main = useRef<HTMLElement>(null);
   const reduced = useReducedMotion();
@@ -70,14 +77,24 @@ export default function App() {
     setActual(null);
     setAnterior(undefined);
     setVideo(undefined);
+    setIntentoAnterior(null);
+    setIndiceJurado(0);
     setError("");
-    setConfirmarSalida(false);
+    setConfirmarSalida(null);
     setPaso("inicio");
   }
   function inicio() {
-    if (cargando) return;
-    if (paso === "grabacion" || paso === "jurado") setConfirmarSalida(true);
+    if (cargando || juradoEnviando) return;
+    if (paso === "grabacion" || paso === "jurado") setConfirmarSalida("inicio");
     else nuevo();
+  }
+  function volver() {
+    if (cargando || juradoEnviando) return;
+    if (paso === "jurado") setConfirmarSalida("reporte");
+    else if (paso === "reporte" && intentoAnterior) {
+      setError("");
+      setPaso("grabacion");
+    } else inicio();
   }
   function cambiarModo(valor: boolean) {
     permisoToken.current++;
@@ -120,7 +137,7 @@ export default function App() {
     setCargando(true);
     setError("");
     try {
-      const resultado = await analizarEnsayo(demo, intento, contexto, fallar);
+      const resultado = await esperarCarga(analizarEnsayo(demo, intento, contexto, fallar));
       setAnterior(
         historial.find((e) => e.demo === demo) ??
           (demo ? ensayoAnteriorDemo() : undefined),
@@ -137,6 +154,8 @@ export default function App() {
       persistir(ensayo);
       setActual(ensayo);
       setVideo(intento.video);
+      setIntentoAnterior(intento);
+      setIndiceJurado(0);
       setPaso("reporte");
     } catch (e) {
       setError(
@@ -166,6 +185,9 @@ export default function App() {
     if (actual && paso === "jurado") persistir(actual);
   }, [actual]);
   function abrir(e: Ensayo) {
+    setIntentoAnterior(null);
+    setIndiceJurado(0);
+    setArchivos([]);
     setActual(e);
     setContexto({ ...e.contexto });
     setDemo(e.demo);
@@ -182,27 +204,43 @@ export default function App() {
   }
   return (
     <MotionConfig reducedMotion="user">
-      <div className="app-shell">
+      <PantallaCarga activa={cargando} />
+      <div className="app-shell" inert={cargando} aria-busy={cargando}>
         <Cabecera paso={paso} demo={demo} onInicio={inicio} />
         {aviso && <Mensaje>{aviso}</Mensaje>}
         {confirmarSalida && (
           <div className="exit-confirm" role="alert">
             <p>
-              ¿Volver al inicio? La grabación en curso se descartará. Los
-              resultados ya guardados se conservarán.
+              {confirmarSalida === "reporte"
+                ? "¿Volver al reporte? Si estás grabando una respuesta, se descartará. Tu reporte y las respuestas ya enviadas se conservarán."
+                : "¿Volver al inicio? La grabación en curso se descartará. Los resultados ya guardados se conservarán."}
             </p>
             <button
               className="button secondary"
-              onClick={() => setConfirmarSalida(false)}
+              onClick={() => setConfirmarSalida(null)}
             >
               Seguir practicando
             </button>
-            <button className="button danger" onClick={nuevo}>
-              Volver al inicio
+            <button className="button danger" disabled={cargando || juradoEnviando} onClick={() => {
+              if (confirmarSalida === "inicio") nuevo();
+              else { setConfirmarSalida(null); setPaso("reporte"); }
+            }}>
+              {confirmarSalida === "reporte" ? "Confirmar regreso al reporte" : "Volver al inicio"}
             </button>
           </div>
         )}
         <main ref={main} tabIndex={-1} id="contenido">
+          {paso !== "inicio" && (
+            <nav className="back-navigation" aria-label="Volver al paso anterior">
+              <button type="button" className="button secondary" onClick={volver}
+                disabled={cargando || juradoEnviando}>
+                <ArrowLeft size={18} aria-hidden="true" />
+                {paso === "grabacion" ? "Volver a preparación"
+                  : paso === "jurado" ? "Volver al reporte"
+                    : intentoAnterior ? "Volver a la grabación" : "Volver a mis ensayos"}
+              </button>
+            </nav>
+          )}
           <AnimatePresence mode="wait">
             <motion.div
               key={paso}
@@ -213,11 +251,14 @@ export default function App() {
             >
               {paso === "inicio" && (
                 <Inicio
+                  archivos={archivos}
+                  onArchivos={setArchivos}
                   contexto={contexto}
                   onContexto={setContexto}
                   demo={demo}
                   onDemo={cambiarModo}
                   onComenzar={() => {
+                    setIntentoAnterior(null);
                     setError("");
                     setPaso("grabacion");
                   }}
@@ -229,6 +270,7 @@ export default function App() {
                   onBorrar={() => {
                     try {
                       borrarEnsayos();
+                      setArchivos([]);
                       setHistorial([]);
                       setAviso("");
                     } catch {
@@ -243,6 +285,7 @@ export default function App() {
               )}
               {paso === "grabacion" && (
                 <Grabacion
+                  intentoInicial={intentoAnterior}
                   demo={demo}
                   contexto={contexto}
                   stream={stream}
@@ -265,6 +308,9 @@ export default function App() {
               )}
               {paso === "jurado" && actual && (
                 <Jurado
+                  indice={indiceJurado}
+                  onIndice={setIndiceJurado}
+                  onEnviando={setJuradoEnviando}
                   ensayo={actual}
                   onSolicitud={(i) => actualizarRespuesta(i)}
                   onRespuesta={actualizarRespuesta}

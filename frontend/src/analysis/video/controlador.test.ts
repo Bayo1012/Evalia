@@ -20,6 +20,15 @@ const camara = () => ({ propia: true, stream: { getVideoTracks: () => [{ readySt
 beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); });
 afterEach(() => { vi.useRealTimers(); });
 describe('ciclo de vida', () => {
+  it('sincroniza los eventos con el inicio efectivo del audio', async () => {
+    const controlador = new ControladorVideo(() => null, vi.fn(), true);
+    await controlador.iniciar(); await vi.advanceTimersByTimeAsync(10_000);
+    controlador.sincronizarInicio(performance.now());
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(controlador.detener()).toEqual([]);
+    await controlador.iniciar(); await vi.advanceTimersByTimeAsync(8000);
+    expect(controlador.detener()[0]?.t).toBe(2);
+  });
   it('iniciar repetido comparte una inicialización y detener libera recursos', async () => {
     const m = modelos(), c = camara(), v = video();
     vi.mocked(cargarModelos).mockResolvedValue(m); vi.mocked(abrirCamara).mockResolvedValue(c);

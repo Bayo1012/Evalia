@@ -26,13 +26,18 @@ export default function Jurado({
   onSolicitud,
   onRespuesta,
   onNuevo,
+  indice,
+  onIndice,
+  onEnviando,
 }: {
   ensayo: Ensayo;
   onSolicitud: (i: number) => void;
   onRespuesta: (i: number, r: Repregunta) => void;
   onNuevo: () => void;
+  indice: number;
+  onIndice: (indice: number) => void;
+  onEnviando: (enviando: boolean) => void;
 }) {
-  const [indice, setIndice] = useState(0);
   const [estado, setEstado] = useState<
     "listo" | "preparando" | "grabando" | "cargando"
   >("listo");
@@ -44,10 +49,14 @@ export default function Jurado({
   const stream = useRef<MediaStream | null>(null);
   const vivo = useRef(true);
   useEffect(() => {
+    onEnviando(estado === "cargando");
+    return () => onEnviando(false);
+  }, [estado, onEnviando]);
+  useEffect(() => {
     vivo.current = true;
     return () => {
       vivo.current = false;
-      sesion.current?.cancelar();
+      try { sesion.current?.cancelar(); } catch { /* liberar también el micrófono */ }
       liberarStream(stream.current);
     };
   }, []);
@@ -126,7 +135,7 @@ export default function Jurado({
   function siguiente() {
     setError("");
     if (indice === 2) setFin(true);
-    else setIndice(indice + 1);
+    else onIndice(indice + 1);
   }
   if (fin)
     return (

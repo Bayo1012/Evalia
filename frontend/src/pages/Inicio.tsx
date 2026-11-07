@@ -1,3 +1,4 @@
+import ArchivosContexto from "../components/ArchivosContexto";
 import {
   ArrowRight,
   Camera,
@@ -49,6 +50,8 @@ export const nombresJurado = Object.fromEntries(
   jurados.map((j) => [j.id, j.nombre]),
 ) as Record<Jurado, string>;
 interface Props {
+  archivos: File[];
+  onArchivos: (archivos: File[]) => void;
   contexto: Contexto;
   onContexto: (c: Contexto) => void;
   demo: boolean;
@@ -84,27 +87,17 @@ export default function Inicio(p: Props) {
             importa.
           </p>
           <div className="hero-art">
-            <div className="orbit orbit-one" />
-            <div className="orbit orbit-two" />
             <span className="art-cross cross-one">+</span>
             <span className="art-cross cross-two">+</span>
-            <div className="art-paper">
+            <div className="hero-character">
               <RobotEvalia grande estado="flotando" />
             </div>
             <div className="art-caption">
               <Sparkles size={15} /> TU COMPAÑERA DE ENSAYO
             </div>
             <span className="art-code">EV—01 / READY</span>
-            <div className="hero-sticker">
-              <span className="status-dot" /> Una práctica más.
-              <br />
-              <strong>Un paso más lejos.</strong>
-            </div>
           </div>
           <div className="hero-bottom">
-            <span>
-              Presenta con <em>seguridad.</em>
-            </span>
             <span className="tiny">
               <LockKeyhole size={13} /> Tu video se queda contigo
             </span>
@@ -211,6 +204,11 @@ export default function Inicio(p: Props) {
                 ? "Rúbrica personalizada seleccionada"
                 : "Rúbrica predeterminada: voz, cuerpo y contenido"}
             </p>
+            <ArchivosContexto
+              archivos={p.archivos}
+              onChange={p.onArchivos}
+              demo={p.demo}
+            />
             <div className="privacy">
               <LockKeyhole size={17} />
               <p>
