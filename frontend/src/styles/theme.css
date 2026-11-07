@@ -1,0 +1,22 @@
+@theme {
+  --color-background: #0c0912;
+  --color-surface: #171122;
+  --color-violet: #a78bfa;
+  --color-ink: #f5f2fa;
+  --color-muted: #b8afc8;
+  --font-heading: "Sora Variable", sans-serif;
+  --font-body: "Manrope Variable", sans-serif;
+}
+:root {
+  color-scheme: dark;
+  --bg: #0c0912;
+  --surface: #171122;
+  --accent: #a78bfa;
+  --text: #f5f2fa;
+  --muted: #b8afc8;
+  --line: #30273e;
+  --radius: 22px;
+  --green: #c4eea9;
+  --font-heading: "Sora Variable", sans-serif;
+  --font-body: "Manrope Variable", sans-serif;
+}
