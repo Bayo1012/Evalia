@@ -1,3 +1,5 @@
+import CalibracionInicial from "../components/CalibracionInicial";
+import type { BaseVideo } from "../analysis/video/calibracion";
 import ArchivosContexto from "../components/ArchivosContexto";
 import {
   ArrowRight,
@@ -10,7 +12,6 @@ import {
   Target,
   Trash2,
   Users,
-  WandSparkles,
 } from "lucide-react";
 import { useState } from "react";
 import type { Contexto, Ensayo, Jurado } from "../types";
@@ -55,7 +56,6 @@ interface Props {
   contexto: Contexto;
   onContexto: (c: Contexto) => void;
   demo: boolean;
-  onDemo: (v: boolean) => void;
   onComenzar: () => void;
   onPermisos: () => Promise<void>;
   permisos: boolean;
@@ -63,8 +63,11 @@ interface Props {
   historial: Ensayo[];
   onAbrir: (e: Ensayo) => void;
   onBorrar: () => void;
-  onEjemplo: () => void;
   audioListo: boolean;
+  stream: MediaStream | null;
+  calibracionLista: boolean;
+  onCalibrada: (base: BaseVideo) => void;
+  onOmitirVideo: () => void;
 }
 export default function Inicio(p: Props) {
   const [pidiendo, setPidiendo] = useState(false);
@@ -110,14 +113,6 @@ export default function Inicio(p: Props) {
               <h2>Hagamos que se entienda.</h2>
             </div>
             <span className="number-chip">01</span>
-          </div>
-          <div className="mode-switch" aria-label="Modo de ensayo">
-            <button aria-pressed={p.demo} onClick={() => p.onDemo(true)}>
-              <WandSparkles size={15} /> Demostración
-            </button>
-            <button aria-pressed={!p.demo} onClick={() => p.onDemo(false)}>
-              <Camera size={15} /> Ensayo real
-            </button>
           </div>
           <form
             onSubmit={(e) => {
@@ -240,6 +235,7 @@ export default function Inicio(p: Props) {
                       ? "Cámara y micrófono disponibles"
                       : "Activar cámara y micrófono"}
                 </Boton>
+                {p.stream && <CalibracionInicial key={p.stream.id} stream={p.stream} onLista={p.onCalibrada} onOmitir={p.onOmitirVideo} />}
                 {!p.audioListo && (
                   <Mensaje>
                     La grabación real estará disponible al conectar el módulo de
@@ -254,7 +250,7 @@ export default function Inicio(p: Props) {
               type="submit"
               disabled={
                 !p.contexto.presentacion.trim() ||
-                (!p.demo && (!p.permisos || !p.audioListo))
+                (!p.demo && (!p.permisos || !p.audioListo || !p.calibracionLista))
               }
             >
               Comenzar ensayo <ArrowRight size={19} />
@@ -277,13 +273,6 @@ export default function Inicio(p: Props) {
             </h2>
           </div>
           <div className="actions">
-            <Boton
-              variante="ghost"
-              onClick={p.onEjemplo}
-              disabled={p.historial.some((e) => e.id === "demo-anterior")}
-            >
-              Cargar ensayo de ejemplo
-            </Boton>
             {p.historial.length > 0 && (
               <Boton variante="ghost" onClick={() => setConfirmar(true)}>
                 <Trash2 size={15} /> Borrar mis datos

@@ -125,10 +125,9 @@ export function Cabecera({
           ))}
         </ol>
       </nav>
-      <span className={`mode-badge ${demo ? "" : "real"}`}>
-        <span />
-        {demo ? "Modo demo: datos simulados" : "Modo real"}
-      </span>
+      {demo && <span className="mode-badge">
+        <span /> Modo demo: datos simulados
+      </span>}
     </header>
   );
 }

@@ -14,7 +14,7 @@ INSTRUCCIONES:
 
 REGLAS IMPORTANTES:
 
-- Utiliza la rúbrica predeterminada proporcionada.
+- Utiliza la rúbrica proporcionada, sea predeterminada o personalizada.
 - No inventes datos, citas, ejemplos ni argumentos.
 - No atribuyas al expositor afirmaciones que no realizó.
 - No confundas una transcripción incompleta con falta de conocimiento.
@@ -25,3 +25,12 @@ REGLAS IMPORTANTES:
 - Si la transcripción es insuficiente, advierte esta limitación.
 
 La evaluación debe ser específica para la exposición analizada, no una valoración genérica.
+
+FORMATO OBLIGATORIO:
+Devuelve exclusivamente un objeto JSON con estas cinco propiedades, sin omitir ninguna:
+- criterios: exactamente cinco objetos, con nombre (texto), puntaje (entero de 0 a 20) y justificacion (texto con evidencia de lo dicho).
+- fortalezas: lista de textos.
+- aspectos_mejorar: lista de textos.
+- observacion_general: texto que sintetiza la evaluación de esta exposición.
+- limitaciones: texto que describe las limitaciones de la evidencia; si no hay ninguna, devuelve una cadena vacía "". Esta propiedad siempre debe existir.
+No incluyas puntaje_total ni puntaje_maximo: los calcula el backend. No añadas propiedades fuera del esquema.

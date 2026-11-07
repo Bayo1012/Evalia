@@ -14,7 +14,7 @@ async def transcribir_audio(
     content_type: str = "audio/ogg"
 ) -> dict:
 
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
 
     if not api_key:
         raise ValueError("Falta configurar GROQ_API_KEY.")
@@ -25,6 +25,8 @@ async def transcribir_audio(
     client = AsyncOpenAI(
         api_key=api_key,
         base_url=BASE_URL,
+        timeout=45.0,
+        max_retries=0,
         default_headers={
             "Accept-Encoding": "identity"
         }
@@ -40,12 +42,15 @@ async def transcribir_audio(
         respuesta = await client.audio.transcriptions.create(
             model=MODEL,
             file=archivo,
-            response_format="json",
+            response_format="verbose_json",
+            timestamp_granularities=["word"],
             language="es"
         )
 
         return {
             "texto": respuesta.text,
+            "duracion": getattr(respuesta, "duration", 0) or 0,
+            "palabras": [dict(w) if isinstance(w, dict) else w.model_dump() for w in (getattr(respuesta, "words", None) or [])],
             "modelo": MODEL,
             "estado": "completado"
         }

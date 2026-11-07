@@ -108,3 +108,17 @@ describe('ciclo de vida', () => {
     expect(cargarModelos).not.toHaveBeenCalled(); expect(abrirCamara).not.toHaveBeenCalled();
   });
 });
+
+it('conserva la calibración de Inicio al sincronizar el audio y descarta eventos previos', async () => {
+  const base = { rostro: { yaw: 0, pitch: 0, irisX: 0, irisY: 0, desviacionOjos: 0 },
+    postura: { x: .5, y: .5, ancho: .3, inclinacion: 0 } };
+  vi.mocked(cargarModelos).mockResolvedValue(modelos());
+  vi.mocked(abrirCamara).mockResolvedValue(camara());
+  const publicar = vi.fn();
+  const controlador = new ControladorVideo(video, publicar, false, base);
+  await controlador.iniciar();
+  controlador.sincronizarInicio(performance.now());
+  expect(controlador.obtenerBase()).toBe(base);
+  expect(publicar.mock.lastCall?.[0].calibrando).toBe(false);
+  expect(controlador.detener()).toEqual([]);
+});

@@ -1,3 +1,4 @@
+import type { BaseVideo } from "../analysis/video/calibracion";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -29,6 +30,8 @@ import {
 } from "../integrations/audio";
 import { useAnalisisVideo, dibujarLandmarks } from "../analysis/video";
 interface Props {
+  baseVideo?: BaseVideo | null;
+  omitirVideo?: boolean;
   intentoInicial?: Intento | null;
   demo: boolean;
   contexto: Contexto;
@@ -53,7 +56,6 @@ export default function Grabacion(p: Props) {
     volumen: null,
     ritmo: null,
   });
-  const [revisionUrl, setRevisionUrl] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sesion = useRef<SesionAudio | null>(null);
@@ -61,7 +63,7 @@ export default function Grabacion(p: Props) {
   const inicio = useRef(0);
   const bloqueo = useRef(false);
   const vivo = useRef(true);
-  const analisis = useAnalisisVideo(videoRef, { mock: p.demo });
+  const analisis = useAnalisisVideo(videoRef, { mock: p.demo, base: p.baseVideo });
   useEffect(() => {
     vivo.current = true;
     return () => {
@@ -96,15 +98,6 @@ export default function Grabacion(p: Props) {
     canvasRef.current.height = videoRef.current.videoHeight || 480;
     dibujarLandmarks(canvasRef.current, analisis.landmarks);
   }, [analisis.landmarks]);
-  useEffect(() => {
-    if (!intento?.video) {
-      setRevisionUrl("");
-      return;
-    }
-    const url = URL.createObjectURL(intento.video);
-    setRevisionUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [intento]);
   useEffect(() => {
     if (estado !== "grabando") return;
     const timer = setInterval(
@@ -149,7 +142,7 @@ export default function Grabacion(p: Props) {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-      await analisis.iniciar();
+      if (!p.omitirVideo) await analisis.iniciar();
       if (!vivo.current) return;
       const nueva = await adaptador.iniciar(stream, (m) => {
         if (vivo.current) setAudio(m);
@@ -262,15 +255,11 @@ export default function Grabacion(p: Props) {
             {p.demo ? (
               <CamaraDemo revision={estado === "revision"} />
             ) : estado === "revision" ? (
-              revisionUrl ? (
-                <video className="local-video" src={revisionUrl} controls />
-              ) : (
-                <div className="no-video">
-                  <Camera />
-                  <h3>Audio listo para analizar</h3>
-                  <p>Este intento no tiene video local.</p>
-                </div>
-              )
+              <div className="no-video">
+                <Camera />
+                <h3>Grabación lista para analizar</h3>
+                <p>Podrás reproducir tu ensayo junto a los momentos señalados en el reporte.</p>
+              </div>
             ) : (
               <>
                 <video
@@ -324,6 +313,7 @@ export default function Grabacion(p: Props) {
               <Mic size={17} /> {ocupado ? "Preparando cámara y análisis…" : "Iniciar grabación real"}
             </Boton>
           )}
+          {!p.demo && p.omitirVideo && <Mensaje>Continuaste sin análisis de video. La cámara y el audio siguen disponibles.</Mensaje>}
           {(error || (!p.demo && analisis.error)) && (
             <Mensaje error>{error || analisis.error}</Mensaje>
           )}
@@ -429,7 +419,7 @@ export default function Grabacion(p: Props) {
             <p>
               {p.demo
                 ? "Un ritmo tranquilo da espacio a tus ideas."
-                : "El ritmo estará disponible desde el módulo de audio."}
+                : "El ritmo se calcula al transcribir el audio en el reporte."}
             </p>
           </div>
           <div className="metric">

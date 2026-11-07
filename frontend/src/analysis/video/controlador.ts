@@ -1,3 +1,4 @@
+import type { BaseVideo } from './calibracion';
 import type { Evento } from '../../types';
 import { VIDEO_CONFIG as C } from './config';
 import { vistaInicial, type VistaVideo } from './interfaces';
@@ -24,13 +25,13 @@ export class ControladorVideo {
   private finales: Evento[] = [];
 
   constructor(private readonly obtenerVideo: () => HTMLVideoElement | null,
-    private readonly publicar: (vista: VistaVideo) => void, private readonly mock = C.mock as boolean) {}
+    private readonly publicar: (vista: VistaVideo) => void, private readonly mock = C.mock as boolean, private readonly baseInicial: BaseVideo | null = null) {}
 
   iniciar(): Promise<void> {
     if (this.pendiente) return this.pendiente;
     if (this.activo) return Promise.resolve();
     const token = ++this.token;
-    this.motor = new MotorVideo(); this.finales = []; this.fallo = false;
+    this.motor = new MotorVideo(this.baseInicial); this.finales = []; this.fallo = false;
     this.abort = new AbortController();
     const signal = this.abort.signal;
     this.publicar({ ...vistaInicial(), estado: 'cargando', aviso: 'Preparando análisis de video…' });
@@ -69,7 +70,7 @@ export class ControladorVideo {
       await Promise.race([preparar(), limite]);
       if (token !== this.token || signal.aborted) return;
       this.inicio = performance.now(); this.ultimoFrameEn = this.inicio; this.ultimoFrame = -1; this.activo = true;
-      this.publicar({ ...vistaInicial(), calibrando: true, aviso: 'Mira a la cámara y mantén los hombros visibles durante 3 segundos.' });
+      this.publicar({ ...vistaInicial(), calibrando: !this.motor.obtenerBase(), aviso: this.motor.obtenerBase() ? 'Calibración lista.' : 'Mira a la cámara y mantén los hombros visibles durante 3 segundos.' });
       this.programar(token);
     } catch (error) {
       if (token === this.token) this.fallar(mensajeError(error));
@@ -135,9 +136,10 @@ export class ControladorVideo {
   sincronizarInicio(inicioMs: number): void {
     if (!this.activo || this.fallo || !Number.isFinite(inicioMs) || inicioMs < 0 || inicioMs > performance.now()) return;
     this.inicio = inicioMs;
-    this.motor = new MotorVideo(); this.finales = [];
-    this.publicar(this.mock ? vistaMock() : { ...vistaInicial(), calibrando: true,
-      aviso: 'Mira a la cámara y mantén los hombros visibles durante 3 segundos.' });
+    this.motor = new MotorVideo(this.motor.obtenerBase()); this.finales = [];
+    this.publicar(this.mock ? vistaMock() : { ...vistaInicial(), calibrando: !this.motor.obtenerBase(),
+      aviso: this.motor.obtenerBase() ? "Calibración lista." : 'Mira a la cámara y mantén los hombros visibles durante 3 segundos.' });
   }
+  obtenerBase(): BaseVideo | null { return this.motor.obtenerBase(); }
   destruir(): void { this.liberar(); this.motor = new MotorVideo(); this.finales = []; }
 }

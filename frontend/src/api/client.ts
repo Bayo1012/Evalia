@@ -6,17 +6,21 @@ async function post<T>(
   validar: (x: unknown) => x is T,
 ): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const timeout = setTimeout(() => controller.abort(), 240000);
   try {
     const response = await fetch(`${base}${ruta}`, {
       method: "POST",
       body: form,
       signal: controller.signal,
     });
-    if (!response.ok)
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
       throw new Error(
-        `El servidor no pudo procesar el ensayo (${response.status}).`,
+        typeof error?.detail === "string"
+          ? error.detail
+          : `El servidor no pudo procesar el ensayo (${response.status}).`,
       );
+    }
     const data: unknown = await response.json();
     if (!validar(data))
       throw new Error("La respuesta del servidor tiene un formato inesperado.");

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import type { BaseVideo } from "./analysis/video/calibracion";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import {
   AnimatePresence,
@@ -23,9 +24,11 @@ import {
 import { liberarStream, obtenerAdaptadorAudio } from "./integrations/audio";
 import type { Contexto, Ensayo, Intento, Paso, Repregunta } from "./types";
 export default function App() {
+  const [baseVideo, setBaseVideo] = useState<BaseVideo | null>(null);
+  const [omitirVideo, setOmitirVideo] = useState(false);
   const [archivos, setArchivos] = useState<File[]>([]);
   const [paso, setPaso] = useState<Paso>("inicio");
-  const [demo, setDemo] = useState(true);
+  const [demo, setDemo] = useState(false);
   const [contexto, setContexto] = useState<Contexto>({ ...contextoDemo });
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [historial, setHistorial] = useState(listarEnsayos);
@@ -37,7 +40,12 @@ export default function App() {
   const [juradoEnviando, setJuradoEnviando] = useState(false);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
-  const [cargando, setCargando] = useState(false);
+  const [analizando, setCargando] = useState(false);
+  const [preparandoVideo, setPreparandoVideo] = useState(false);
+  const cargando = analizando || preparandoVideo;
+  const videoListo = useCallback(() => setPreparandoVideo(false), []);
+  const videoPreparando = useCallback(() => setPreparandoVideo(true), []);
+  const videoFallido = useCallback(() => setPreparandoVideo(false), []);
   const [fallar, setFallar] = useState(false);
   const [confirmarSalida, setConfirmarSalida] = useState<"inicio" | "reporte" | null>(null);
   const bloqueo = useRef(false);
@@ -71,6 +79,9 @@ export default function App() {
     }
   }
   function nuevo() {
+    setDemo(false);
+    setBaseVideo(null);
+    setOmitirVideo(false);
     permisoToken.current++;
     liberarStream(stream);
     setStream(null);
@@ -96,14 +107,9 @@ export default function App() {
       setPaso("grabacion");
     } else inicio();
   }
-  function cambiarModo(valor: boolean) {
-    permisoToken.current++;
-    liberarStream(stream);
-    setStream(null);
-    setDemo(valor);
-    setError("");
-  }
   async function permisos() {
+    setBaseVideo(null);
+    setOmitirVideo(false);
     const token = ++permisoToken.current;
     setError("");
     try {
@@ -124,7 +130,7 @@ export default function App() {
       if (token === permisoToken.current)
         setError(
           e instanceof DOMException && e.name === "NotAllowedError"
-            ? "No se concedieron los permisos. Puedes habilitarlos en tu navegador o usar la demo."
+            ? "No se concedieron los permisos. Puedes habilitarlos en tu navegador e intentarlo de nuevo."
             : e instanceof Error
               ? e.message
               : "No se pudo acceder a la cámara.",
@@ -154,6 +160,7 @@ export default function App() {
       persistir(ensayo);
       setActual(ensayo);
       setVideo(intento.video);
+      setPreparandoVideo(!!intento.video);
       setIntentoAnterior(intento);
       setIndiceJurado(0);
       setPaso("reporte");
@@ -256,7 +263,6 @@ export default function App() {
                   contexto={contexto}
                   onContexto={setContexto}
                   demo={demo}
-                  onDemo={cambiarModo}
                   onComenzar={() => {
                     setIntentoAnterior(null);
                     setError("");
@@ -279,12 +285,17 @@ export default function App() {
                       );
                     }
                   }}
-                  onEjemplo={() => persistir(ensayoAnteriorDemo())}
+                  stream={stream}
+                  calibracionLista={!!baseVideo || omitirVideo}
+                  onCalibrada={setBaseVideo}
+                  onOmitirVideo={() => setOmitirVideo(true)}
                   audioListo={!!obtenerAdaptadorAudio()}
                 />
               )}
               {paso === "grabacion" && (
                 <Grabacion
+                  baseVideo={baseVideo}
+                  omitirVideo={omitirVideo}
                   intentoInicial={intentoAnterior}
                   demo={demo}
                   contexto={contexto}
@@ -300,6 +311,9 @@ export default function App() {
               )}
               {paso === "reporte" && actual && (
                 <Reporte
+                  onVideoPreparando={videoPreparando}
+                  onVideoListo={videoListo}
+                  onVideoError={videoFallido}
                   ensayo={actual}
                   anterior={anterior}
                   video={video}

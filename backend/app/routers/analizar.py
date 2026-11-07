@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.services.transcribe import transcribir_audio
 from app.services.muletillas import analizar_muletillas
-from app.services.llm import evaluar_contenido
+from app.services.llm import evaluar_contenido, generar_textos, cargar_prompt, LimiteTemporalIA
 from app.services.reporte import generar_reporte
 
 
@@ -19,7 +19,18 @@ logger = logging.getLogger(__name__)
 MAX_AUDIO_SIZE = 25 * 1024 * 1024
 
 
-@router.post("/")
+def resumir_eventos(eventos: list[dict]) -> list[dict]:
+    """Resumen para IA; la línea de tiempo conserva todos los eventos originales."""
+    grupos = {}
+    for evento in eventos:
+        clave = (evento["tipo"], evento["origen"])
+        if clave not in grupos:
+            grupos[clave] = {**evento, "cantidad": 0}
+        grupos[clave]["cantidad"] += 1
+    return list(grupos.values())
+
+
+@router.post("")
 async def analizar_exposicion(
     audio: UploadFile = File(...),
     contexto: str = Form(default=""),
@@ -85,6 +96,16 @@ async def analizar_exposicion(
                 detail="Los eventos deben ser una lista o un objeto JSON."
             )
 
+        try:
+            datos_contexto = json.loads(contexto or "{}")
+            if not isinstance(datos_contexto, dict) or not isinstance(eventos, list):
+                raise ValueError()
+            perfil = datos_contexto.get("jurado", "exigente")
+            if perfil not in ("exigente", "curioso", "formal", "publico_general"):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(400, "Contexto o eventos inválidos.")
+
         # 4. Transcribir audio
         try:
             resultado_transcripcion = await transcribir_audio(
@@ -97,7 +118,7 @@ async def analizar_exposicion(
             logger.error("Error de configuración de transcripción: %s", error)
             raise HTTPException(
                 status_code=503,
-                detail="El servicio de transcripción no está configurado correctamente."
+                detail="Falta configurar GROQ_API_KEY en backend/.env. Guarda tu clave y reinicia el backend."
             )
 
         except Exception as error:
@@ -134,6 +155,9 @@ async def analizar_exposicion(
                 contexto=contexto
             )
 
+        except LimiteTemporalIA as error:
+            raise HTTPException(429, str(error))
+
         except (ValueError, FileNotFoundError) as error:
             logger.error("Error de configuración de evaluación: %s", error)
             raise HTTPException(
@@ -164,31 +188,57 @@ async def analizar_exposicion(
                 detail="No fue posible generar el reporte final."
             )
 
-        # 8. Respuesta completa para el frontend
+        # Adaptar los resultados existentes al contrato consumido por el frontend.
+        palabras = [
+            {"palabra": w["word"], "inicio": w["start"], "fin": w["end"]}
+            for w in resultado_transcripcion.get("palabras", [])
+        ]
+        duracion = max(float(resultado_transcripcion.get("duracion", 0)),
+                       max((w["fin"] for w in palabras), default=0),
+                       max((e.get("t", 0) for e in eventos), default=0))
+        if not palabras:
+            raise HTTPException(502, "La transcripción no devolvió tiempos por palabra.")
+        from app.services.muletillas import normalizar_texto
+        import re
+        posiciones = list(re.finditer(r"\S+", normalizar_texto(transcripcion)))
+        for hallazgo in resultado_muletillas.get("detalle", []):
+            indice = next((i for i, m in enumerate(posiciones) if m.start() <= hallazgo["posicion"] < m.end()), 0)
+            t = palabras[min(indice, len(palabras) - 1)]["inicio"]
+            eventos.append({"t": t, "tipo": "muletilla", "origen": "transcripcion", "detalle": hallazgo["muletilla"]})
+        ritmo = len(palabras) * 60 / duracion if duracion else 0
+        if ritmo > 180 or 0 < ritmo < 90:
+            eventos.append({"t": 0, "tipo": "ritmo_rapido" if ritmo > 180 else "ritmo_lento",
+                            "origen": "transcripcion", "detalle": f"{ritmo:.0f} palabras/min"})
+        voz = max(0, 100 - 4 * sum(e["origen"] != "video" for e in eventos))
+        cuerpo = max(0, 100 - 5 * sum(e["origen"] == "video" for e in eventos))
+        contenido = reporte["resumen"]["puntaje_total"]
+        rubrica = datos_contexto.get("rubrica", "").strip()
+        datos_ia = {"transcripcion": transcripcion, "contexto": datos_contexto,
+                   "rubrica": rubrica or cargar_prompt("rubrica_predeterminada.md"),
+                   "evaluacion": {k: evaluacion.get(k) for k in ("fortalezas", "aspectos_mejorar", "observacion_general")},
+                   "eventos": resumir_eventos(eventos)}
+        try:
+            # Evitar ráfagas de tokens contra la cuota compartida del proveedor.
+            preguntas = await generar_textos(
+                f"Genera exactamente tres preguntas de jurado con perfil {perfil} sobre esta exposición.",
+                datos_ia, 3, f"jurado_{perfil}.md")
+            recomendaciones = await generar_textos(
+                "Genera exactamente tres recomendaciones prácticas basadas en los hallazgos.",
+                datos_ia, 3, "reporte.md")
+        except LimiteTemporalIA as error:
+            raise HTTPException(429, str(error))
+        except Exception:
+            logger.exception("Error generando jurado y recomendaciones")
+            raise HTTPException(502, "No fue posible generar las preguntas y recomendaciones.")
         return {
-            "estado": "completado",
-            "mensaje": "La exposición fue analizada correctamente.",
-            "analisis_completado": True,
-
-            "datos": {
-                "nombre_archivo": audio.filename,
-                "tipo_audio": content_type,
-                "tamano_bytes": len(contenido_audio),
-                "contexto": contexto,
-                "eventos_cliente": eventos
-            },
-
-            "transcripcion": {
-                "texto": transcripcion,
-                "modelo": resultado_transcripcion.get("modelo"),
-                "estado": resultado_transcripcion.get("estado")
-            },
-
-            "muletillas": resultado_muletillas,
-
-            "evaluacion": evaluacion,
-
-            "reporte": reporte
+            "duracion": duracion,
+            "rubrica_usada": "personalizada" if rubrica else "predeterminada",
+            "puntajes": {"voz": voz, "cuerpo": cuerpo, "contenido": contenido,
+                         "total": round((voz + cuerpo + contenido) / 3)},
+            "eventos": sorted(eventos, key=lambda e: e["t"]),
+            "transcripcion": palabras,
+            "recomendaciones": recomendaciones,
+            "preguntas_jurado": preguntas,
         }
 
     except HTTPException:

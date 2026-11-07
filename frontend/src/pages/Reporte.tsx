@@ -9,7 +9,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { Ensayo, Evento } from "../types";
-import { Acompanante, Barra, Boton, Tarjeta, tiempo } from "../components/ui";
+import { Acompanante, Barra, Boton, Tarjeta, Mensaje, tiempo } from "../components/ui";
 const etiquetas: Record<Evento["tipo"], string> = {
   mirada_baja: "Mirada hacia abajo",
   postura_inestable: "Postura inestable",
@@ -26,13 +26,21 @@ export default function Reporte({
   anterior,
   video,
   onJurado,
+  onVideoListo,
+  onVideoError,
+  onVideoPreparando,
 }: {
   ensayo: Ensayo;
   anterior?: Ensayo;
   video?: Blob;
   onJurado: () => void;
+  onVideoPreparando?: () => void;
+  onVideoListo?: () => void;
+  onVideoError?: (mensaje: string) => void;
 }) {
   const [indice, setIndice] = useState(0);
+  const [revisionVideo, setRevisionVideo] = useState(0);
+  const [errorVideo, setErrorVideo] = useState("");
   const [url, setUrl] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const r = ensayo.resultado;
@@ -45,10 +53,59 @@ export default function Reporte({
     const u = URL.createObjectURL(video);
     setUrl(u);
     return () => URL.revokeObjectURL(u);
-  }, [video]);
+  }, [video, revisionVideo]);
+  useEffect(() => {
+    const reproductor = videoRef.current;
+    if (!url || !reproductor) return;
+    onVideoPreparando?.();
+    setErrorVideo("");
+    let terminado = false;
+    const limpiar = () => {
+      clearTimeout(timeout);
+      reproductor.removeEventListener("canplay", comprobar);
+      reproductor.removeEventListener("loadeddata", comprobar);
+      reproductor.removeEventListener("error", fallar);
+    };
+    const listo = () => {
+      if (terminado) return;
+      terminado = true;
+      limpiar();
+      onVideoListo?.();
+    };
+    const fallar = () => {
+      if (terminado) return;
+      terminado = true;
+      limpiar();
+      const codigo = reproductor.error?.code;
+      const mensaje = codigo === 3 || codigo === 4
+        ? "El navegador no pudo decodificar el video local. Puedes reintentar la reproducción o descargarlo."
+        : "El video tardó en cargar. Puedes reintentar su reproducción sin repetir el análisis.";
+      setErrorVideo(mensaje);
+      onVideoError?.(mensaje);
+    };
+    const comprobar = () => {
+      // Un primer cuadro decodificado es suficiente para mostrar el reproductor.
+      // Algunos navegadores posponen canplay hasta una interacción del usuario.
+      if (reproductor.readyState >= 2 && !reproductor.seeking) listo();
+    };
+    const timeout = setTimeout(fallar, 20000);
+    reproductor.addEventListener("canplay", comprobar);
+    reproductor.addEventListener("loadeddata", comprobar);
+    reproductor.addEventListener("error", fallar);
+    if (reproductor.error) fallar();
+    else if (reproductor.readyState >= 2) comprobar();
+    else reproductor.load();
+    return limpiar;
+  }, [url, onVideoListo, onVideoError, onVideoPreparando]);
   function seleccionar(i: number) {
     setIndice(i);
-    if (videoRef.current) videoRef.current.currentTime = r.eventos[i].t;
+    const reproductor = videoRef.current;
+    if (reproductor) {
+      const t = r.eventos[i].t;
+      reproductor.currentTime = Number.isFinite(reproductor.duration)
+        ? Math.min(t, reproductor.duration) : t;
+      void reproductor.play().catch(() => { /* Los controles permiten iniciar manualmente. */ });
+    }
   }
   return (
     <>
@@ -117,7 +174,7 @@ export default function Reporte({
         <div className="moment-grid">
           <div className="replay-stage">
             {url ? (
-              <video ref={videoRef} src={url} controls playsInline />
+              <video ref={videoRef} src={url} controls playsInline preload="auto" aria-label="Grabación de tu ensayo" />
             ) : (
               <div className="no-video">
                 <span className="replay-icon">
@@ -161,6 +218,11 @@ export default function Reporte({
             </div>
           </div>
         </div>
+        {errorVideo && <div>
+          <Mensaje error>{errorVideo}</Mensaje>
+          <Boton variante="secondary" onClick={() => setRevisionVideo(v => v + 1)}>Reintentar reproducción</Boton>
+          {url && <a className="button secondary" href={url} download={`evalia.${video?.type.includes("mp4") ? "mp4" : "webm"}`}>Descargar video</a>}
+        </div>}
         <div className="timeline-track" aria-hidden="true">
           {r.eventos.map((e, i) => (
             <span
@@ -194,21 +256,15 @@ export default function Reporte({
         <Acompanante>Tu siguiente versión ya está más cerca.</Acompanante>
       </div>
       <div className="recommendations">
-        {r.recomendaciones.map((texto, i) => (
-          <Tarjeta key={i}>
+        {r.recomendaciones.map((texto, i) => {
+          const separador = texto.indexOf(":");
+          const conTitulo = separador > 0 && separador < 100;
+          return <Tarjeta key={i}>
             <span className="recommendation-number">0{i + 1}</span>
-            <h3>
-              {
-                [
-                  "Conecta con tu audiencia",
-                  "Dale espacio a tus ideas",
-                  "Deja una idea memorable",
-                ][i]
-              }
-            </h3>
-            <p>{texto}</p>
-          </Tarjeta>
-        ))}
+            <h3>{conTitulo ? texto.slice(0, separador) : `Recomendación ${i + 1}`}</h3>
+            <p>{conTitulo ? texto.slice(separador + 1).trim() : texto}</p>
+          </Tarjeta>;
+        })}
       </div>
       <details className="transcript">
         <summary>Ver transcripción {ensayo.demo ? "de ejemplo" : ""}</summary>

@@ -160,7 +160,7 @@ for (const width of [1440, 390]) {
     expect(errors).toEqual([]);
   });
 }
-test("modo real honesto y texto requerido", async ({ page }) => {
+test("modo real con audio conectado y texto requerido", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("¿Qué vas a presentar y ante quién?").fill("   ");
   await expect(
@@ -168,8 +168,9 @@ test("modo real honesto y texto requerido", async ({ page }) => {
   ).toBeDisabled();
   await page.getByRole("button", { name: "Ensayo real", exact: true }).click();
   await expect(
-    page.getByText("La grabación real estará disponible", { exact: false }),
+    page.getByRole("button", { name: "Activar cámara y micrófono" }),
   ).toBeVisible();
+  await expect(page.getByText("La grabación real estará disponible", { exact: false })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Comenzar ensayo" }),
   ).toBeDisabled();

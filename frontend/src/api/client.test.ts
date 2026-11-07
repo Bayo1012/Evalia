@@ -47,8 +47,15 @@ it("rechaza respuestas incompletas y puntajes fuera de rango", () => {
   ).toBe(false);
 });
 it("conserva un mensaje util ante error del backend", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }));
   await expect(analizar(new Blob(["a"]), contextoDemo, [])).rejects.toThrow(
     "503",
   );
+});
+
+it("muestra el detalle del error de FastAPI", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: false, status: 422, json: async () => ({ detail: "No se pudo obtener texto del audio." }),
+  }));
+  await expect(analizar(new Blob(["a"]), contextoDemo, [])).rejects.toThrow("No se pudo obtener texto del audio.");
 });

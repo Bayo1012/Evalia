@@ -1,3 +1,4 @@
+import type { BaseVideo } from './calibracion';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 import type { Evento } from '../../types';
 
@@ -16,6 +17,7 @@ export interface VistaVideo {
   landmarks: LandmarksVideo;
 }
 export interface AnalisisVideo extends VistaVideo {
+  obtenerBase: () => BaseVideo | null;
   iniciar: () => Promise<void>;
   detener: () => Evento[];
   reiniciar: () => Promise<void>;

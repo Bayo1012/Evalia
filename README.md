@@ -14,22 +14,38 @@ pnpm dev
 
 Abrir la URL que imprime Vite (por defecto http://127.0.0.1:5173). `pnpm build` comprueba TypeScript y genera `frontend/dist`. `pnpm preview` permite inspeccionar ese build.
 
-## Demo sin backend ni permisos
+## Ensayo
 
-El inicio selecciona **Demostración** por defecto. No pide cámara/micrófono, no graba ni hace llamadas al backend. El aviso "Modo demo: datos simulados" está presente en las cuatro pantallas.
+Inicio muestra directamente la configuración del ensayo real, sin selector de demostración. Activa cámara y micrófono, calibra y comienza cuando quieras. Los nuevos reportes y recomendaciones se generan desde el audio enviado al backend. Los datos de demostración se conservan como fixtures internos y los reportes antiguos siguen disponibles en el historial.
 
-1. Opcional: cargar el ensayo anterior con **Cargar ensayo de ejemplo** y pegar una rúbrica personalizada.
-2. **Comenzar ensayo** y **Detener grabación**. El cronómetro es de práctica; el análisis simulado siempre corresponde al mismo ejemplo de 3 minutos.
-3. **Descartar y volver a grabar** borra el intento, sin perder la configuración. **Analizar ensayo** muestra carga. La casilla de error falla solo la siguiente petición y permite **Reintentar análisis** con el mismo intento.
-4. En el reporte, seleccionar eventos, consultar las tres recomendaciones y continuar al jurado. Si no hay historial previo, se usa el ensayo anterior simulado como comparación de demo y se identifica como tal; no se inserta en el historial automáticamente.
-5. Responder cada pregunta con los controles de grabación simulada. Se muestra una transcripción y una sola repregunta. Después de las tres aparece el cierre.
-6. Volver al inicio o recargar: resultados y respuestas siguen disponibles. **Borrar mis datos → Confirmar borrado** elimina el historial de esta aplicación.
-
-La demo es determinista: cambiar tema, jurado o rúbrica no genera contenido nuevo de IA. La etiqueta de rúbrica refleja la selección, pero recomendaciones/preguntas siguen siendo ejemplos. No se inventa un video de una persona: se muestra una silueta y la ausencia de archivo se explica en el reporte.
+Las recomendaciones usan la transcripción, la evaluación y la rúbrica de ese ensayo; los títulos ya no son fijos. Se pide evidencia de lo dicho y acciones concretas aplicadas a su contenido.
 
 ## Integración real
 
-Ver `docs/frontend-integracion.md`. El modo real exige permisos y el adaptador de audio registrado. Mientras falta, el botón de inicio permanece deshabilitado con un mensaje explícito. El backend de este repositorio aún contiene archivos vacíos: no hay comandos de arranque funcionales que ejecutar hasta que Erick lo implemente.
+El modo real ya registra el grabador de audio del navegador y se conecta con FastAPI. Inicio usa directamente cámara, micrófono e IA para el ensayo real.
+
+En una terminal desde la raíz del repositorio:
+
+```sh
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+# Crear backend/.env tomando backend/.env.example como plantilla y completar GROQ_API_KEY.
+cd backend
+.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+En otra terminal:
+
+```sh
+cd frontend
+pnpm install
+pnpm setup:video
+pnpm dev
+```
+
+`pnpm dev` inicia el frontend; FastAPI debe estar ejecutándose en la otra terminal. El backend carga `backend/.env` automáticamente. Al detener la grabación se envía únicamente audio y eventos; el reporte devuelve el contrato compartido y el jurado transcribe cada respuesta hablada para generar una repregunta. El ritmo se calcula después de la transcripción, no durante la grabación. En Inicio, activa cámara y micrófono y mira a la cámara con los hombros visibles durante 3 segundos para calibrar. Después pasa a grabación e inicia cuando quieras; se reutiliza la calibración. Si falla, puedes reintentar o continuar sin análisis de video.
+
+Si aparece un error indicando que falta `GROQ_API_KEY`, completa esa variable en `backend/.env` y reinicia FastAPI. El archivo `.env.example` es solo una plantilla y no configura el servicio por sí mismo.
 
 El cliente ya prepara `POST /api/analizar` y `POST /api/repregunta` con multipart. El proxy de Vite apunta a `http://127.0.0.1:8000`; opcionalmente configurar `VITE_API_URL` (ver `frontend/.env.example`). Esta URL es pública; nunca colocar claves en variables VITE_. Para producción hay que servir `/api` o configurar esa URL y CORS.
 
@@ -59,4 +75,6 @@ Las fuentes Sora y Manrope se sirven desde dependencias locales. Los JPG adjunto
 - `frontend/src/integrations/audio.ts`: punto de conexión de Erick.
 - `frontend/src/analysis/video/`: módulo original de Carlo, consumido por Grabacion.
 
-No se hicieron commits ni se cambió la rama activa. El código de backend y el módulo de Carlo permanecen intactos.
+El módulo de video de Carlo se conserva sin cambios.
+
+Si Groq alcanza temporalmente el límite de tokens por minuto, el backend espera lo indicado por el proveedor (hasta 15 segundos por espera) y reintenta solo esa llamada hasta dos veces. Jurado y recomendaciones se generan en secuencia y reciben un resumen de los eventos; la transcripción se conserva completa. Si la cuota sigue agotada o requiere una espera larga, se devuelve HTTP 429 con un mensaje para reintentar, sin perder la grabación. El cliente admite hasta 240 segundos para completar el análisis.

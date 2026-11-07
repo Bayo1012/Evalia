@@ -1,5 +1,5 @@
 import type { Evento } from "../types";
-/** Erick registra su implementación antes de montar App. Esta capa no analiza ni graba audio. */
+/** main.tsx registra el grabador antes de montar App. Esta interfaz separa la grabación de las pantallas. */
 export interface MetricasAudio {
   volumen: number | null;
   ritmo: number | null;

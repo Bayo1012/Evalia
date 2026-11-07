@@ -18,6 +18,10 @@ export class MotorVideo {
   private episodios = { mirada_baja: episodioVacio(), postura_inestable: episodioVacio(), manos_ocultas: episodioVacio() };
   private eventos: Evento[] = [];
 
+  constructor(base: BaseVideo | null = null) { this.base = base; }
+
+  obtenerBase(): BaseVideo | null { return this.base; }
+
   procesar(rostro: FaceLandmarkerResult, pose: PoseLandmarkerResult, t: number) {
     const cara = extraerRostro(rostro);
     const puntos = pose.landmarks[0] ?? [];

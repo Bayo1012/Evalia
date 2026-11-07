@@ -63,9 +63,16 @@ async function preparar(page: Page, modelos: 'cpu' | 'error' | 'reales' = 'cpu')
       },
     });
   });
-  await page.getByRole('button', { name: 'Ensayo real', exact: true }).click();
   await page.getByRole('button', { name: 'Activar cámara y micrófono' }).click();
   await expect(page.getByRole('button', { name: 'Cámara y micrófono disponibles' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Comenzar ensayo' })).toBeDisabled();
+  if (modelos === 'cpu') {
+    await expect(page.getByText('Calibración lista. Puedes comenzar el ensayo cuando quieras.')).toBeVisible({ timeout: 15_000 });
+  } else {
+    await expect(page.getByRole('alert')).toContainText(modelos === 'error' ? 'Puedes continuar' : 'No se logró calibrar', { timeout: 30_000 });
+    await page.getByRole('button', { name: 'Continuar sin análisis de video' }).click();
+  }
+  expect(await page.evaluate(() => window.pruebaVideo.inicios)).toBe(0);
   await page.getByRole('button', { name: 'Comenzar ensayo' }).click();
   await expect(page.getByRole('button', { name: 'Iniciar grabación real' })).toBeVisible();
 }
@@ -109,7 +116,7 @@ test('modelo ausente no impide grabar y detener audio', async ({ page }) => {
   await preparar(page, 'error');
   await page.getByRole('button', { name: 'Iniciar grabación real' }).click();
   await expect(page.getByRole('button', { name: 'Detener grabación', exact: true })).toBeVisible();
-  await expect(page.getByRole('alert')).toContainText('Puedes continuar');
+  await expect(page.getByText('Continuaste sin análisis de video.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Detener grabación', exact: true }).click();
   await camarasCerradas(page);
   await page.route('**/api/analizar', route => route.fulfill({ status: 503, body: 'Prueba' }));
@@ -134,7 +141,7 @@ test('tres ensayos, descarte y salida liberan tracks y detectores', async ({ pag
   await page.getByRole('button', { name: 'Volver al inicio', exact: true }).click();
   await page.locator('.exit-confirm').getByRole('button', { name: 'Volver al inicio' }).click();
   await camarasCerradas(page);
-  await expect.poll(() => page.evaluate(() => window.pruebaVideo.cierres)).toBe(3);
+  await expect.poll(() => page.evaluate(() => window.pruebaVideo.cierres)).toBe(4);
   expect(await page.evaluate(() => window.pruebaVideo.inicios)).toBe(3);
 });
 
@@ -157,7 +164,7 @@ test('MediaPipe real carga los archivos locales y deja continuar si no puede cal
   await page.getByRole('button', { name: 'Iniciar grabación real' }).click();
   await expect(page.getByRole('button', { name: 'Detener grabación', exact: true })).toBeVisible({ timeout: 30_000 });
   // La cámara sintética no contiene una persona: debe fallar la calibración, no inventar métricas.
-  await expect(page.getByRole('alert')).toContainText('No se logró calibrar', { timeout: 25_000 });
+  await expect(page.getByText('Continuaste sin análisis de video.', { exact: false })).toBeVisible();
   expect(recursos.some(r => r.endsWith('face_landmarker.task'))).toBe(true);
   expect(recursos.some(r => r.endsWith('pose_landmarker_lite.task'))).toBe(true);
   expect(recursos.some(r => r.endsWith('.wasm'))).toBe(true);
